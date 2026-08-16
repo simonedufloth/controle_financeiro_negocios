@@ -1,11 +1,29 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Controle Financeiro de Empreendimentos", page_icon="💎", layout="wide")
 
-# Estilo visual do cabeçalho idêntico ao layout
+# Configuração da Conexão com o Google Sheets usando st.secrets
+scope = [
+    "https://www.googleapis.com/spreadsheets/v3/json",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+@st.cache_resource
+def conectar_google_sheets():
+    # Lê as credenciais seguras do Streamlit Secrets
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    # Abre a planilha diretamente pelo ID correto do seu Google Drive
+    spreadsheet = client.open_by_key("1xpGfT_dbl3bQY0gpc9ZiLWrl5en7tLLZX2H1XuntYq8")
+    return spreadsheet
+
+# Estilo visual do cabeçalho
 st.markdown("""
     <style>
     .main-header {
@@ -35,12 +53,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 projects = ["Projeto Alfa", "Projeto Beta", "Projeto Delta", "Projeto Gama", "Projeto Omega"]
-EXCEL_FILE = "controle_financeiro.xlsx"
 
 # Abas de navegação superiores
 nav_option = st.radio("", ["Novo Lançamento", "Consultar e Resumos"], horizontal=True, label_visibility="collapsed")
 
-# Dicionário estrito de Categorias Dinâmicas vinculadas aos Tipos de Movimentação
+# Dicionário de Categorias Dinâmicas
 categorias_dict = {
     "Receita": [
         "Receita de Venda de Produtos",
@@ -75,54 +92,30 @@ if nav_option == "Novo Lançamento":
     col1, col2 = st.columns(2)
     with col1:
         projeto = st.selectbox("Selecione o Projeto", projects)
-        
-        # Tipo de Movimentação (sem form para reagir e atualizar instantaneamente as categorias)
         tipo = st.selectbox("Tipo de Movimentação", ["Receita", "Despesa", "Investimento"], key="tipo_mov")
         
     with col2:
-        # Data com formato explícito DD/MM/YYYY
         data = st.date_input("Data do Lançamento", value=datetime.today(), format="DD/MM/YYYY")
-        
-        # Categoria Específica atualizada dinamicamente com base no Tipo escolhido acima
         categorias_disponiveis = categorias_dict.get(tipo, ["Outras"])
         categoria = st.selectbox("Categoria Específica (Dinâmica)", categorias_disponiveis)
         
-    descricao = st.text_input("📝 Descrição / Fornecedor / Observação", placeholder="Ex: Aquisição de equipamentos para o projeto...")
+    descricao = st.text_input("📝 Descrição / Fornecedor / Observação", placeholder="Ex: Aquisição de equipamentos...")
     valor = st.number_input("💰 Valor (R$)", min_value=0.00, format="%.2f")
     
     if st.button("💾 Salvar Lançamento no Sistema", use_container_width=True):
-        # Converte a data para o padrão de texto dd/mm/yyyy para gravação
         data_formatada = data.strftime("%d/%m/%Y")
         
-        nova_linha = pd.DataFrame({
-            "Data": [data_formatada],
-            "Projeto": [projeto],
-            "Tipo": [tipo],
-            "Categoria": [categoria],
-            "Valor": [valor],
-            "Descrição": [descricao]
-        })
-        
         try:
-            # Salva na aba específica do projeto correspondente na planilha Excel
-            if os.path.exists(EXCEL_FILE):
-                with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-                    try:
-                        df_existing = pd.read_excel(EXCEL_FILE, sheet_name=projeto)
-                        df_updated = pd.concat([df_existing, nova_linha], ignore_index=True)
-                        df_updated.to_excel(writer, sheet_name=projeto, index=False)
-                    except ValueError:
-                        nova_linha.to_excel(writer, sheet_name=projeto, index=False)
-            else:
-                with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
-                    nova_linha.to_excel(writer, sheet_name=projeto, index=False)
+            # Conecta ao Google Sheets e insere os dados na aba correspondente
+            sh = conectar_google_sheets()
+            worksheet = sh.worksheet(projeto)
             
-            st.success("✅ Lançamento salvo com sucesso e vinculado à planilha do projeto!")
+            # Adiciona a linha na aba do Google Sheets
+            worksheet.append_row([data_formatada, projeto, tipo, categoria, valor, descricao])
+            
+            st.success("✅ Lançamento salvo com sucesso diretamente na sua planilha do Google Drive!")
         except Exception as e:
-            if "transactions" not in st.session_state:
-                st.session_state["transactions"] = pd.DataFrame(columns=["Data", "Projeto", "Tipo", "Categoria", "Valor", "Descrição"])
-            st.session_state["transactions"] = pd.concat([st.session_state["transactions"], nova_linha], ignore_index=True)
-            st.success("✅ Lançamento salvo com sucesso no sistema!")
+            st.error(f"Erro ao salvar na planilha: {e}")
 
 elif nav_option == "Consultar e Resumos":
     st.subheader("📊 Painel de Consultas e Resumos")
@@ -130,40 +123,39 @@ elif nav_option == "Consultar e Resumos":
     filtro_projeto = st.selectbox("Filtrar visualização por Projeto", ["Todos os Projetos"] + projects)
     
     try:
-        df_filtered = pd.DataFrame()
-        if os.path.exists(EXCEL_FILE):
-            if filtro_projeto == "Todos os Projetos":
-                dfs = []
-                for p in projects:
-                    try:
-                        df_p = pd.read_excel(EXCEL_FILE, sheet_name=p)
-                        dfs.append(df_p)
-                    except Exception:
-                        pass
-                if dfs:
-                    df_filtered = pd.concat(dfs, ignore_index=True)
-            else:
-                try:
-                    df_filtered = pd.read_excel(EXCEL_FILE, sheet_name=filtro_projeto)
-                except Exception:
-                    st.info(f"Ainda não há dados salvos para o {filtro_projeto}.")
-        else:
-            if "transactions" in st.session_state:
-                df_filtered = st.session_state["transactions"]
-                if filtro_projeto != "Todos os Projetos":
-                    df_filtered = df_filtered[df_filtered["Projeto"] == filtro_projeto]
+        sh = conectar_google_sheets()
+        dfs = []
         
+        if filtro_projeto == "Todos os Projetos":
+            for p in projects:
+                try:
+                    ws = sh.worksheet(p)
+                    dados = ws.get_all_records()
+                    if dados:
+                        df_p = pd.DataFrame(dados)
+                        dfs.append(df_p)
+                except Exception:
+                    pass
+            if dfs:
+                df_filtered = pd.concat(dfs, ignore_index=True)
+            else:
+                df_filtered = pd.DataFrame()
+        else:
+            ws = sh.worksheet(filtro_projeto)
+            dados = ws.get_all_records()
+            df_filtered = pd.DataFrame(dados)
+            
         if df_filtered.empty:
-            st.info("Nenhum lançamento cadastrado até o momento.")
+            st.info("Nenhum lançamento cadastrado até o momento nesta aba.")
         else:
             if "Data" in df_filtered.columns:
                 df_filtered["Data"] = df_filtered["Data"].astype(str)
             
             st.dataframe(df_filtered, use_container_width=True)
             
-            receitas = df_filtered[df_filtered["Tipo"] == "Receita"]["Valor"].sum()
-            despesas = df_filtered[df_filtered["Tipo"] == "Despesa"]["Valor"].sum()
-            investimentos = df_filtered[df_filtered["Tipo"] == "Investimento"]["Valor"].sum()
+            receitas = df_filtered[df_filtered["Tipo"] == "Receita"]["Valor"].sum() if "Tipo" in df_filtered.columns else 0
+            despesas = df_filtered[df_filtered["Tipo"] == "Despesa"]["Valor"].sum() if "Tipo" in df_filtered.columns else 0
+            investimentos = df_filtered[df_filtered["Tipo"] == "Investimento"]["Valor"].sum() if "Tipo" in df_filtered.columns else 0
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Receitas", f"R$ {receitas:,.2f}")
@@ -171,4 +163,4 @@ elif nav_option == "Consultar e Resumos":
             col3.metric("Total Investimentos", f"R$ {investimentos:,.2f}")
             
     except Exception as e:
-        st.info("Aguardando o primeiro lançamento para gerar os resumos.")
+        st.info("Aguardando o primeiro lançamento para gerar os resumos ou verifique a conexão.")
