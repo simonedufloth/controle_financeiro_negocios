@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Controle Financeiro de Empreendimentos", page_icon="💎", layout="wide")
 
-# Configuração da Conexão com o Google Sheets usando st.secrets
+# Configuração da Conexão com o Google Sheets
 scope = [
     "https://www.googleapis.com/spreadsheets/v3/json",
     "https://www.googleapis.com/auth/spreadsheets",
@@ -15,11 +15,19 @@ scope = [
 
 @st.cache_resource
 def conectar_google_sheets():
-    # Lê as credenciais seguras do Streamlit Secrets
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    # Lê as credenciais seguras do Streamlit Secrets de forma robusta
+    secrets_dict = dict(st.secrets["gcp_service_account"])
+    
+    # Corrige eventuais quebras de linha na chave privada para evitar erros de PEM
+    if "private_key" in secrets_dict:
+        pk = secrets_dict["private_key"]
+        pk = pk.replace("\\n", "\n")
+        secrets_dict["private_key"] = pk
+
+    creds = Credentials.from_service_account_info(secrets_dict, scopes=scope)
     client = gspread.authorize(creds)
-    # Abre a planilha diretamente pelo ID correto do seu Google Drive
+    
+    # Abre a planilha diretamente pelo ID correto
     spreadsheet = client.open_by_key("1xpGfT_dbl3bQY0gpc9ZiLWrl5en7tLLZX2H1XuntYq8")
     return spreadsheet
 
@@ -106,13 +114,9 @@ if nav_option == "Novo Lançamento":
         data_formatada = data.strftime("%d/%m/%Y")
         
         try:
-            # Conecta ao Google Sheets e insere os dados na aba correspondente
             sh = conectar_google_sheets()
             worksheet = sh.worksheet(projeto)
-            
-            # Adiciona a linha na aba do Google Sheets
             worksheet.append_row([data_formatada, projeto, tipo, categoria, valor, descricao])
-            
             st.success("✅ Lançamento salvo com sucesso diretamente na sua planilha do Google Drive!")
         except Exception as e:
             st.error(f"Erro ao salvar na planilha: {e}")
