@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import json
-import tempfile
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -19,28 +17,8 @@ scope = [
 def conectar_google_sheets():
     # Lê as credenciais seguras do Streamlit Secrets
     creds_dict = dict(st.secrets["gcp_service_account"])
-    
-    # Tratamento rígido e limpo da chave privada para remover qualquer "extra data"
-    if "private_key" in creds_dict:
-        pk = str(creds_dict["private_key"])
-        pk = pk.replace("\\n", "\n")
-        
-        # Encontra exatamente onde termina a chave privada e descarta todo o resto
-        end_tag = "-----END PRIVATE KEY-----"
-        if end_tag in pk:
-            idx = pk.find(end_tag) + len(end_tag)
-            pk = pk[:idx] + "\n"
-            
-        creds_dict["private_key"] = pk.strip() + "\n"
-        
-    # Cria um arquivo JSON temporário limpo para a autenticação do Google
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json", encoding="utf-8") as f:
-        json.dump(creds_dict, f)
-        temp_path = f.name
-
-    creds = Credentials.from_service_account_file(temp_path, scopes=scope)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    
     # Abre a planilha diretamente pelo ID correto do seu Google Drive
     spreadsheet = client.open_by_key("1xpGfT_dbl3bQY0gpc9ZiLWrl5en7tLLZX2H1XuntYq8")
     return spreadsheet
