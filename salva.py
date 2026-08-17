@@ -117,7 +117,27 @@ if nav_option == "Novo Lançamento":
         
         try:
             # Conecta ao Google Sheets e insere os dados na aba correspondente
-            sh = conectar_google_sheets()
+            sh = @st.cache_resource
+def conectar_google_sheets():
+    # Lê as credenciais seguras do Streamlit Secrets
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # CORREÇÃO AUTOMÁTICA: Corta qualquer dado extra ou espaço excedente após a chave privada
+    if "private_key" in creds_dict:
+        pk = str(creds_dict["private_key"]).replace("\\n", "\n").strip()
+        end_marker = "-----END PRIVATE KEY-----"
+        if end_marker in pk:
+            idx = pk.find(end_marker) + len(end_marker)
+            pk = pk[:idx] + "\n"
+        creds_dict["private_key"] = pk
+
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    
+    # Abre a planilha diretamente pelo ID correto do seu Google Drive
+    spreadsheet = client.open_by_key("1xpGfT_dbl3bQY0gpc9ZiLWrl5en7tLLZX2H1XuntYq8")
+    return spreadsheet
+
             worksheet = sh.worksheet(projeto)
             
             # Adiciona a linha na aba do Google Sheets
