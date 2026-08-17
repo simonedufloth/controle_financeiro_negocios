@@ -20,9 +20,17 @@ def conectar_google_sheets():
     # Lê as credenciais seguras do Streamlit Secrets
     creds_dict = dict(st.secrets["gcp_service_account"])
     
-    # Garante que as quebras de linha da chave privada sejam formatadas corretamente
+    # Tratamento avançado e automático da chave privada para eliminar qualquer erro de formato ou "extra data"
     if "private_key" in creds_dict:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        pk = creds_dict["private_key"]
+        pk = pk.replace("\\n", "\n").strip()
+        
+        # Corta qualquer caractere ou espaço indesejado que venha após o fim da chave
+        end_marker = "-----END PRIVATE KEY-----"
+        if end_marker in pk:
+            idx = pk.find(end_marker) + len(end_marker)
+            pk = pk[:idx] + "\n"
+        creds_dict["private_key"] = pk
         
     # Cria um arquivo JSON temporário seguro para evitar qualquer erro de leitura PEM
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
