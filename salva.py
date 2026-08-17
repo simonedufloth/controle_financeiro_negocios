@@ -17,8 +17,14 @@ scope = [
 def conectar_google_sheets():
     # Lê as credenciais seguras do Streamlit Secrets
     creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # Tratamento automático para evitar erros na chave privada (PEM / quebras de linha)
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
+    
     # Abre a planilha diretamente pelo ID correto do seu Google Drive
     spreadsheet = client.open_by_key("1xpGfT_dbl3bQY0gpc9ZiLWrl5en7tLLZX2H1XuntYq8")
     return spreadsheet
